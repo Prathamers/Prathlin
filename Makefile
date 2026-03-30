@@ -1,84 +1,139 @@
-# Plinux Makefile
-# Mirrors modular early Linux kernel (v0.01 - 1.0) build style
-# Designed for the AntiGravity framework on Linux
+# Prathlin OS Multi-Architecture Makefile
+# Supports x86_64 (Intel/AMD) and arm64 (AArch64)
+# Usage: 
+#   make              (Builds x86_64 by default)
+#   make ARCH=arm64   (Builds ARM64)
+#   make iso          (Builds GRUB ISO for x86_64)
 
-CC = gcc
-AS = as
-LD = ld
+ARCH ?= x86_64
 
-# Compiler Flags per requirements. Forcing 32-bit as GRUB multiboot 1
-# drops us into 32-bit protected mode without long mode set up.
-CFLAGS = -m32 -ffreestanding -nostdlib -fno-stack-protector -Wall -Wextra -O2 -Iinclude
-LDFLAGS = -m elf_i386 -nostdlib -z noexecstack
-
-SRC_DIR = .
-BUILD_DIR = build
+# Isolate build directories by architecture
+BUILD_DIR = build/$(ARCH)
 ISO_DIR = isodir
 
-# Automatically find C and Assembly source files using find
-C_SOURCES = $(shell find $(SRC_DIR) -name '*.c' ! -path '*/build/*')
-S_SOURCES = $(shell find $(SRC_DIR) -name '*.s' ! -path '*/build/*')
-ASM_SOURCES = $(shell find $(SRC_DIR) -name '*.asm' ! -path '*/build/*')
-
-# Generate object file paths inside the build directory
-C_OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(C_SOURCES))
-S_OBJECTS = $(patsubst $(SRC_DIR)/%.s, $(BUILD_DIR)/%.o, $(S_SOURCES))
-ASM_OBJECTS = $(patsubst $(SRC_DIR)/%.asm, $(BUILD_DIR)/%.o, $(ASM_SOURCES))
-
+TARGET_BIN = $(BUILD_DIR)/prathlin.bin
 TARGET_INITRD = $(BUILD_DIR)/initrd.tar
+TARGET_ISO = prathlin_$(ARCH).iso
 
-OBJECTS = $(ASM_OBJECTS) $(S_OBJECTS) $(C_OBJECTS) 
+# ==========================================
+# 1. Architecture-Specific Toolchains & Flags
+# ==========================================
+ifeq ($(ARCH),x86_64)
+    # x86_64 / Multiboot Environment
+    CC = x86_64-elf-gcc
+    LD = x86_64-elf-ld
+    AS = nasm
+    
+    # x86_64 Kernel Flags (No Red Zone, No SIMD to prevent FPU corruption on interrupts)
+    CFLAGS = -m64 -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
+             -ffreestanding -nostdlib -fno-stack-protector -Wall -Wextra -O2 -Iinclude
+    LDFLAGS = -nostdlib -z max-page-size=0x1000 -T arch/x86_64/linker.ld
+    ASFLAGS = -f elf64
 
-TARGET_BIN = plinux.bin
-TARGET_ISO = plinux.iso
+    ARCH_DIR = arch/x86_64
+    
+else ifeq ($(ARCH),arm64)
+    # ARM64 / Bare-metal Environment
+    CC = aarch64-elf-gcc
+    LD = aarch64-elf-ld
+    AS = $(CC)
+    
+    # ARM64 Kernel Flags
+    CFLAGS = -ffreestanding -nostdlib -fno-stack-protector -Wall -Wextra -O2 -Iinclude
+    LDFLAGS = -nostdlib -T arch/arm64/linker.ld
+    ASFLAGS = -c
 
+    ARCH_DIR = arch/arm64
+    
+else
+    $(error Unknown architecture: $(ARCH). Supported: x86_64, arm64)
+endif
+
+# ==========================================
+# 2. Source Discovery & Object Mapping
+# ==========================================
+# Find generic files and ONLY the files for the active architecture
+GENERIC_C_SRCS = $(shell find kernel lib -name '*.c')
+ARCH_C_SRCS = $(shell find $(ARCH_DIR) -name '*.c')
+ARCH_S_SRCS = $(shell find $(ARCH_DIR) -name '*.S' -o -name '*.s')
+ARCH_ASM_SRCS = $(shell find $(ARCH_DIR) -name '*.asm')
+
+# Map sources to object files in the targeted build directory
+GENERIC_C_OBJS = $(patsubst %.c, $(BUILD_DIR)/%.o, $(GENERIC_C_SRCS))
+ARCH_C_OBJS = $(patsubst %.c, $(BUILD_DIR)/%.o, $(ARCH_C_SRCS))
+ARCH_S_OBJS = $(patsubst %.S, $(BUILD_DIR)/%.o, $(patsubst %.s, $(BUILD_DIR)/%.o, $(ARCH_S_SRCS)))
+ARCH_ASM_OBJS = $(patsubst %.asm, $(BUILD_DIR)/%.o, $(ARCH_ASM_SRCS))
+
+OBJECTS = $(ARCH_ASM_OBJS) $(ARCH_S_OBJS) $(ARCH_C_OBJS) $(GENERIC_C_OBJS)
+
+# ==========================================
+# 3. Build Rules
+# ==========================================
 .PHONY: all clean iso initrd
 
-all: $(BUILD_DIR)/$(TARGET_BIN) initrd
+all: $(TARGET_BIN) initrd
 
 initrd: $(TARGET_INITRD)
 
+# Package the initial ramdisk
 $(TARGET_INITRD):
 	@mkdir -p $(BUILD_DIR)
-	tar -cf $@ -C packages .
+	@echo "  TAR     $@"
+	@tar -cf $@ -C packages . 2>/dev/null || true
 
-$(BUILD_DIR)/$(TARGET_BIN): $(OBJECTS)
-	@mkdir -p $(BUILD_DIR)
-	$(LD) $(LDFLAGS) -T linker.ld -o $@ $^
-
-# Rule for compiling C files
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+# Link the final kernel binary
+$(TARGET_BIN): $(OBJECTS)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	@echo "  LD      $@"
+	@$(LD) $(LDFLAGS) -o $@ $^
 
-# Rule for compiling Assembly (.s) files
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.s
+# Compile C Files
+$(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(AS) $< -o $@
+	@echo "  CC      $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
-# Rule for compiling Assembly (.asm) files (e.g. NASM)
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.asm
+# Compile NASM Assembly (x86_64 boot.asm)
+$(BUILD_DIR)/%.o: %.asm
 	@mkdir -p $(dir $@)
-	nasm -f elf32 $< -o $@
+	@echo "  NASM    $<"
+	@$(AS) $(ASFLAGS) $< -o $@
 
-# Create an ISO using grub(2)-mkrescue
+# Compile GNU Assembly (ARM64 boot.S)
+$(BUILD_DIR)/%.o: %.S
+	@mkdir -p $(dir $@)
+	@echo "  AS      $<"
+	@$(AS) $(ASFLAGS) $< -o $@
+
+# ==========================================
+# 4. ISO Generation (x86_64 Only)
+# ==========================================
 iso: all
+ifeq ($(ARCH),x86_64)
+	@echo "  GEN-ISO $(TARGET_ISO)"
 	@mkdir -p $(ISO_DIR)/boot/grub
-	cp $(BUILD_DIR)/$(TARGET_BIN) $(ISO_DIR)/boot/
-	cp $(TARGET_INITRD) $(ISO_DIR)/boot/
-	echo 'menuentry "Plinux" {' > $(ISO_DIR)/boot/grub/grub.cfg
-	echo '  multiboot /boot/plinux.bin' >> $(ISO_DIR)/boot/grub/grub.cfg
-	echo '  module /boot/initrd.tar "Initrd Packages"' >> $(ISO_DIR)/boot/grub/grub.cfg
-	echo '}' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@cp $(TARGET_BIN) $(ISO_DIR)/boot/
+	@cp $(TARGET_INITRD) $(ISO_DIR)/boot/ 2>/dev/null || true
+	@echo 'menuentry "Prathlin OS" {' > $(ISO_DIR)/boot/grub/grub.cfg
+	@echo '  multiboot /boot/prathlin.bin' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@echo '  module /boot/initrd.tar "Initrd Packages"' >> $(ISO_DIR)/boot/grub/grub.cfg
+	@echo '}' >> $(ISO_DIR)/boot/grub/grub.cfg
 	@if command -v grub2-mkrescue >/dev/null 2>&1; then \
 		grub2-mkrescue -o $(TARGET_ISO) $(ISO_DIR); \
 	elif command -v grub-mkrescue >/dev/null 2>&1; then \
 		grub-mkrescue -o $(TARGET_ISO) $(ISO_DIR); \
 	else \
-		echo "Error: Neither grub2-mkrescue nor grub-mkrescue found." >&2; \
-		exit 1; \
+		echo "Error: grub-mkrescue not found." >&2; exit 1; \
 	fi
+else
+	@echo "Notice: ISO generation is for x86_64 GRUB only."
+	@echo "For ARM64, boot the raw binary in QEMU:"
+	@echo "  qemu-system-aarch64 -M virt -cpu cortex-a53 -kernel $(TARGET_BIN) -nographic"
+endif
 
-# Clean up build artifacts
+# ==========================================
+# 5. Cleanup
+# ==========================================
 clean:
-	rm -rf $(BUILD_DIR) $(ISO_DIR) $(TARGET_ISO)
+	@echo "  CLEAN"
+	@rm -rf build $(ISO_DIR) *.iso
