@@ -1,50 +1,143 @@
-# Plinux 🐧
+# 🐧 Plinux
 
-Plinux is an open-source, custom Operating System Kernel written from scratch in C and x86_64 Assembly. It is designed to be lightweight, educational, and highly modular. 
+**Plinux** is a lightweight, modular, open-source operating system kernel built from scratch using **C** and **x86_64 Assembly**.
 
-Currently, Plinux is a bare-metal kernel that supports GRUB Multiboot, custom hardware abstraction layers (HAL), and an in-memory Initrd Package Manager!
+---
 
-## 🚀 Features
-- **GRUB Multiboot 1 Compliant**
-- Lightweight VGA Text-Mode Console Driver (`printk`)
-- Custom Standard Library Baselines (`string.h`)
-- **Memory-based Initrd Package Manager** (Reads TAR packages on boot)
-- Fully Open Source (MIT License)
+## 🚀 Overview
 
-## 🛠 Building the OS
+Plinux is a **bare-metal kernel** designed for learning and experimentation.  
+It boots using **GRUB Multiboot** and includes a minimal runtime environment with a simple in-memory package system.
 
-### Prerequisites
-To compile the kernel and build a bootable ISO, you will need the following dependencies installed on your Linux host:
+---
+
+## ✨ Features
+
+- **GRUB Multiboot v1 Compatible**
+- **VGA Text Mode Console (`printk`)**
+- **Initrd Package Manager (TAR-based)**
+- **Custom Minimal Standard Library**
+- **Hardware Abstraction Layer (HAL)**
+- **Fully Open Source (MIT License)**
+
+---
+
+## 🧰 Requirements
+
+### **Debian / Ubuntu**
 ```bash
-# On Fedora/RHEL Systems:
-sudo dnf install -y make gcc nasm grub2-tools grub2-tools-extra xorriso
-
-# On Debian/Ubuntu Systems:
 sudo apt install -y make gcc nasm grub-pc-bin xorriso
 ```
 
-### Compiling
-Simply run the Makefile in the root directory:
+### **Fedora / RHEL**
+```bash
+sudo dnf install -y make gcc nasm grub2-tools grub2-tools-extra xorriso
+```
+
+---
+
+## 🛠 Build
+
 ```bash
 make clean && make iso
 ```
-This will compile the C and Assembly files, bundle the `packages/` directory into a TAR file, and generate `plinux.iso`.
 
-### Running
-You can boot Plinux using an emulator like QEMU or VirtualBox:
+### **Build Process**
+- Compile C and Assembly source files  
+- Package `/packages` into a TAR archive  
+- Generate bootable ISO → `plinux.iso`  
+
+---
+
+## ▶️ Run
+
+### **Using QEMU**
 ```bash
 qemu-system-x86_64 -cdrom plinux.iso
 ```
 
-## 📁 Directory Structure
-- `arch/` - Architecture-specific bootstrap code (`boot.asm`)
-- `include/` - Standard standard C library headers (`linux/types.h`, `linux/string.h`)
-- `kernel/` - Core OS logic (`main.c`, `printk.c`, `tar.c`)
-- `lib/` - Standard capabilities (`string.c`)
-- `packages/` - Text files bundled into the Initrd Package Manager
+### **Using VirtualBox**
+- Create a new VM (**Type: Other / Unknown**)  
+- Attach `plinux.iso`  
+- Start the VM  
+
+---
+
+## 📂 Project Structure
+
+```bash
+plinux/
+├── arch/        # Architecture-specific code
+├── include/     # Header files
+├── kernel/      # Core kernel logic
+├── lib/         # Standard library
+├── packages/    # Initrd files
+├── Makefile
+└── README.md
+```
+
+---
+
+## 📦 Initrd Package System
+
+- `/packages` is bundled into a TAR archive  
+- Loaded into memory during boot  
+- Read directly by the kernel  
+
+### **Use Cases**
+- Configuration files  
+- Static resources  
+- Preloaded data  
+
+---
 
 ## 🤝 Contributing
-Want to build your own OS on top of Plinux or contribute features? Please read our [CONTRIBUTING.md](CONTRIBUTING.md) guide!
+
+- Fork the repository  
+- Create a new branch  
+- Submit a Pull Request  
+
+See: `CONTRIBUTING.md`
+
+---
 
 ## 📜 License
-Plinux is released under the permissive [MIT License](LICENSE). Do whatever you want with it!
+
+**MIT License**
+
+You are free to use, modify, and distribute this project.
+
+---
+
+## 🛣️ Roadmap
+
+- [ ] Keyboard Driver  
+- [ ] Memory Management (Paging / Heap)  
+- [ ] Filesystem Support (FAT / EXT2)  
+- [ ] User Mode Programs  
+- [ ] Shell Interface  
+- [ ] Interrupt Handling (IDT)  
+
+---
+
+## 💡 Purpose
+
+Plinux is intended for:
+
+- Learning OS development  
+- Low-level programming  
+- System experimentation  
+
+> ⚠️ Not production-ready
+
+---
+
+## ⭐ Support
+
+If you like this project:
+
+- Star the repository  
+- Fork it  
+- Build your own OS  
+
+---
